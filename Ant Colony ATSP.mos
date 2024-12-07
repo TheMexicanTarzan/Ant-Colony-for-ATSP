@@ -1,0 +1,139 @@
+!@encoding CP1252
+model Hormigas
+
+! Declaraciones iniciales para el número de ciudades
+declarations
+	n: integer  ! Número de ciudades
+	File: string  ! Nombre del archivo de entrada
+end-declarations
+
+! Establecer el nombre del archivo de datos
+File:="ATSP.txt"
+
+! Inicializar el número de ciudades desde el archivo
+initializations from File
+	n 
+end-initializations
+
+! Declaraciones de variables para el algoritmo de colonias de hormigas
+declarations
+	m, t, nbiter: integer  ! Número de hormigas, iteración actual, número máximo de iteraciones sin mejora
+	alpha,beta,rho: real  ! Parámetros de control del algoritmo (importancia de feromona, visibilidad, tasa de evaporación)
+	d:array (1..n,1..n) of real  ! Matriz de distancias entre ciudades
+end-declarations
+
+! Inicializar la matriz de distancias desde el archivo
+initializations from File
+	d
+end-initializations
+
+! Solicitar parámetros de entrada al usuario
+writeln("Número de hormigas")
+read(m)
+writeln("Número de iteraciones sin mejorar")
+read(nbiter)
+writeln("Factor de evaporación (valor entre 0 y 1):")
+read(rho)
+writeln("Valor del parámetro alpha: ")
+read(alpha)
+writeln("Valor del parámetro betha: ")
+read(beta)
+
+! Declaraciones de variables adicionales para el algoritmo
+declarations
+	tau:array(1..n,1..n) of real  ! Matriz de feromonas
+	eta:array(1..n,1..n) of real  ! Matriz de visibilidad (1/distancia)
+	L:array(1..m) of real  ! Longitud de los tours de cada hormiga
+	N:array(1..m) of set of integer  ! Conjunto de ciudades no visitadas para cada hormiga
+	Tour:array(1..m,1..n) of integer  ! Tours de cada hormiga
+	deltaTau:array(1..n,1..n) of real  ! Rastro de feromonas a depositar
+	BestCost: real  ! Costo del mejor tour encontrado
+	BestTour: array(1..n) of integer  ! Mejor tour encontrado
+	epsilon: real  ! Valor inicial de feromonas
+end-declarations
+
+! Calcular el valor inicial de feromonas como el inverso de la distancia mínima
+epsilon:=min(i,j in 1..n | i<>j) 1/d(i,j)
+
+! Inicializar matrices de feromonas y visibilidad
+forall(i,j in 1..n | i<>j) do
+	tau(i,j):=epsilon  ! Establecer valor inicial de feromonas
+	eta(i,j):=1/d(i,j)  ! Calcular visibilidad como inverso de la distancia
+end-do
+
+! Inicializar variables de control
+BestCost:=MAX_REAL  ! Establecer el costo inicial como el máximo valor posible
+t:=0  ! Contador de iteraciones
+StopCriterion:=false  ! Criterio de parada
+
+! Bucle principal del algoritmo de colonias de hormigas
+while(not StopCriterion) do 
+	t+=1  ! Incrementar contador de iteraciones
+	
+	! Reiniciar conjuntos de ciudades no visitadas para cada hormiga
+	forall(k in 1..m)N(k):=(1..n)
+	
+	! Construir soluciones iniciales para cada hormiga
+	forall(k in 1..m) do
+		s:=integer(round(random*n+.5))  ! Seleccionar ciudad inicial aleatoria
+		Tour(k,1):=s  ! Establecer primera ciudad del tour
+		N(k)-={s}  ! Eliminar ciudad inicial del conjunto de no visitadas
+		L(k):=0  ! Inicializar longitud del tour
+	end-do
+	
+	! Construcción de tours para cada hormiga
+	forall(k in 1..m)do
+		forall(j in 2..n)do 
+			! Calcular probabilidades de selección de la próxima ciudad
+			suma:=sum(l in N(k)) tau(Tour(k,j-1),l)^alpha*eta(Tour(k,j-1),l)^beta
+			acumulada:=0.0
+			aleatorio:=random
+			
+			! Selección de la próxima ciudad usando probabilidad acumulada
+			forall (l in N(k))do
+				acumulada+=tau(Tour(k,j-1),l)^alpha*eta(Tour(k,j-1),l)^beta/suma
+				if aleatorio<=acumulada then
+					lstar:=l
+					break
+				end-if
+			end-do
+			
+			! Actualizar tour y longitud
+			Tour(k,j):=lstar
+			N(k)-={lstar}
+			L(k)+=d(Tour(k,j-1),lstar)
+		end-do
+	end-do
+	
+	! Completar tours y actualizar mejor solución
+	forall(k in 1..m) do
+		L(k)+=d(Tour(k,n),Tour(k,1))  ! Añadir distancia de regreso al punto inicial
+		if L(k)<BestCost then
+			! Imprimir información del mejor tour encontrado
+			writeln("Iteración: ",strfmt(t,4)," Hormiga: ", strfmt(k,4), " Valor: ", strfmt(L(k),10,2))
+			BestCost:=L(k)
+			forall(l in 1..n) BestTour(l):=Tour(k,l)
+			last:=t  ! Guardar iteración del último mejoramiento
+		end-if		
+	end-do
+	
+	! Actualización del rastro de feromonas
+	! Reiniciar matriz de depósito de feromonas
+	forall(i,j in 1..n | i<>j) deltaTau(i,j):=0
+	
+	! Depositar feromonas proporcionales a la calidad de la solución
+	forall(k in 1..m) do
+		forall(i in 1..n-1) deltaTau(Tour(k,i),Tour(k,i+1))+=1/L(k)
+		deltaTau(Tour(k,n),Tour(k,1))+=1/L(k)
+	end-do
+	
+	! Actualizar matriz de feromonas con evaporación
+	forall(i,j in 1..n | i<>j) tau(i,j):=maxlist(1E-8,tau(i,j)*(1-rho)+deltaTau(i,j))
+	
+	! Verificar criterio de parada (número de iteraciones sin mejora)
+	if t-last=nbiter then 
+		StopCriterion:=true
+	end-if
+end-do
+		
+end-model
